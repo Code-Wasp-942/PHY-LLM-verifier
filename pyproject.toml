@@ -1,0 +1,49 @@
+[project]
+name = "llm-physics-grader"
+version = "0.1.0"
+description = "SFT starter for physics rubric triggering with Qwen 8B"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "datasets>=2.19.0",
+  "deepspeed>=0.14.0",
+  "numpy>=1.26.0",
+  "pydantic>=2.7.0",
+  "pyyaml>=6.0.1",
+  "scikit-learn>=1.4.0",
+  "torch>=2.2.0",
+  "transformers>=4.46.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.2.0",
+  "ruff>=0.5.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.pyright]
+exclude = [
+    # 默认排除项（来自 Pyright 官方文档）
+    "**/node_modules",
+    "**/__pycache__",
+    "**/.*",           # 所有隐藏文件/目录（如 .git, .venv, .idea 等）
+    
+    # 项目特定排除项
+    ".venv",
+    ".git",
+    "build",
+    "dist",
+    "venv",
+    "env",
+    "*.egg-info",
+    
+    # 测试和临时文件
+    "**/tests/fixtures",
+    "**/.pytest_cache",
+    "**/.mypy_cache",
+    "**/.ruff_cache"
+]
