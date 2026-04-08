@@ -9,12 +9,9 @@ from typing import Any, Dict, List
 import torch
 import yaml
 from datasets import Dataset
-from transformers import (
-    AutoModelForCausalLM,
-    AutoTokenizer,
-    Trainer,
-    TrainingArguments,
-)
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers.trainer import Trainer
+from transformers.training_args import TrainingArguments
 
 
 @dataclass
@@ -29,6 +26,7 @@ class SFTConfig:
     gradient_accumulation_steps: int = 1
     learning_rate: float = 2e-5
     num_train_epochs: float = 1.0
+    max_steps: int = -1
     warmup_ratio: float = 0.03
     weight_decay: float = 0.0
     lr_scheduler_type: str = "cosine"
@@ -214,6 +212,7 @@ def main() -> None:
         gradient_accumulation_steps=config.gradient_accumulation_steps,
         learning_rate=config.learning_rate,
         num_train_epochs=config.num_train_epochs,
+        max_steps=config.max_steps,
         warmup_ratio=config.warmup_ratio,
         weight_decay=config.weight_decay,
         lr_scheduler_type=config.lr_scheduler_type,
@@ -230,7 +229,7 @@ def main() -> None:
         deepspeed=config.deepspeed,
         report_to=[] if config.report_to == "none" else [config.report_to],
         seed=config.seed,
-        evaluation_strategy="steps" if val_dataset is not None else "no",
+        eval_strategy="steps" if val_dataset is not None else "no",
         save_strategy="steps",
         logging_strategy="steps",
         remove_unused_columns=False,

@@ -6,34 +6,19 @@ import random
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
 
-from src.schema import GradingOutput, GradingTaskInput, SFTSample
+from src.schema import SFTSample, VerifyBenchSample
 
 
-PROMPT_TEMPLATE = """You are a strict physics grading assistant.
-Decide which rubric points are triggered by the student answer.
-
-Rules:
-1) Use only point_id values provided in rubric.
-2) Give evidence from the student answer.
-3) Output valid JSON only.
+PROMPT_TEMPLATE = """You are an accurate problem-solving assistant.
+Solve the following question and output only the final answer text.
 
 [Question]
 {question}
 
-[Reference Answer]
-{reference_answer}
-
-[Rubric]
-{rubric}
-
-[Student Answer]
-{student_answer}
-
-Return JSON:
-{{
-  "triggered_points": [{{"point_id": "...", "triggered": true, "evidence": "...", "confidence": 0.0}}],
-  "final_score": 0
-}}
+[Output Requirement]
+Return the answer directly.
+Do not output JSON.
+Do not add extra prefixes like 'Final Answer:'.
 """
 
 
@@ -60,39 +45,59 @@ def _load_rows(path: Path) -> List[Dict]:
     raise ValueError(f"Unsupported raw data format: {path}")
 
 
-def _normalize_row(row: Dict) -> Tuple[GradingTaskInput, GradingOutput]:
-    if "input" in row and "output" in row:
-        task = GradingTaskInput(question_id=row["question_id"], **row["input"])
-        out = GradingOutput(**row["output"])
-        return task, out
+def _normalize_row(row: Dict) -> VerifyBenchSample:
+    if "prompt" in row and "target" in row:
+        return VerifyBenchSample(
+            question_id=row.get("question_id") or "unknown",
+            completion_id=row.get("completion_id"),
+            question=row.get("question") or "",
+            answer=row.get("target") or "",
+            completion=row.get("completion"),
+            gold_correct=row.get("gold_correct"),
+            completion_model=row.get("completion_model"),
+            source=row.get("source"),
+            answer_type=row.get("answer_type"),
+            answer_subtype=row.get("answer_subtype"),
+            annotator=row.get("annotator") or [],
+        )
 
-    question_id = row.get("question_id") or row.get("id") or "unknown"
-    task = GradingTaskInput(
-        question_id=question_id,
+    return VerifyBenchSample(
+        question_id=row.get("question_id") or row.get("id") or "unknown",
+        completion_id=row.get("completion_id"),
         question=row["question"],
-        reference_answer=row["reference_answer"],
-        rubric=row["rubric"],
-        student_answer=row["student_answer"],
+        answer=row["answer"],
+        completion=row.get("completion"),
+        gold_correct=row.get("gold_correct"),
+        completion_model=row.get("completion_model"),
+        source=row.get("source"),
+        answer_type=row.get("answer_type"),
+        answer_subtype=row.get("answer_subtype"),
+        annotator=row.get("annotator") or [],
     )
-    out = GradingOutput(
-        triggered_points=row["triggered_points"],
-        final_score=row["final_score"],
-    )
-    return task, out
 
 
-def _build_prompt(task: GradingTaskInput) -> str:
-    rubric_json = json.dumps([point.model_dump() for point in task.rubric], ensure_ascii=False)
+def _build_prompt(task: VerifyBenchSample) -> str:
     return PROMPT_TEMPLATE.format(
         question=task.question,
-        reference_answer=task.reference_answer,
-        rubric=rubric_json,
-        student_answer=task.student_answer,
     )
 
 
-def _build_target(out: GradingOutput) -> str:
-    return json.dumps(out.model_dump(), ensure_ascii=False)
+def _build_target(sample: VerifyBenchSample) -> str:
+    return sample.answer.strip()
+
+
+def _deduplicate(rows: List[VerifyBenchSample], enabled: bool) -> List[VerifyBenchSample]:
+    if not enabled:
+        return rows
+
+    kept: List[VerifyBenchSample] = []
+    seen_question_ids = set()
+    for row in rows:
+        if row.question_id in seen_question_ids:
+            continue
+        seen_question_ids.add(row.question_id)
+        kept.append(row)
+    return kept
 
 
 def _split_rows(
@@ -130,17 +135,32 @@ def main() -> None:
     parser.add_argument("--val-ratio", type=float, default=0.1)
     parser.add_argument("--test-ratio", type=float, default=0.1)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--deduplicate", action="store_true")
     args = parser.parse_args()
 
     raw_rows = _load_rows(args.raw)
-    samples: List[SFTSample] = []
+    normalized_rows: List[VerifyBenchSample] = []
     for row in raw_rows:
-        task, out = _normalize_row(row)
+        normalized_rows.append(_normalize_row(row))
+
+    normalized_rows = _deduplicate(normalized_rows, enabled=args.deduplicate)
+
+    samples: List[SFTSample] = []
+    for sample_row in normalized_rows:
         sample = SFTSample(
-            question_id=task.question_id,
-            prompt=_build_prompt(task),
-            target=_build_target(out),
-            metadata={"question_id": task.question_id},
+            question_id=sample_row.question_id,
+            prompt=_build_prompt(sample_row),
+            target=_build_target(sample_row),
+            metadata={
+                "question_id": sample_row.question_id,
+                "completion_id": sample_row.completion_id,
+                "gold_correct": sample_row.gold_correct,
+                "completion_model": sample_row.completion_model,
+                "source": sample_row.source,
+                "answer_type": sample_row.answer_type,
+                "answer_subtype": sample_row.answer_subtype,
+                "annotator": sample_row.annotator,
+            },
         )
         samples.append(sample)
 

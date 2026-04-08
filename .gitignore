@@ -22,3 +22,5 @@ data/processed/*
 
 .tmp_opencode_pkg/
 opencode-ai-*.tgz
+
+models/*

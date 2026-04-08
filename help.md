@@ -86,11 +86,9 @@ bash scripts/04_eval.sh outputs/predictions.jsonl data/processed/test.jsonl
 
 当前评估指标：
 
-- `point_precision`
-- `point_recall`
-- `point_f1`
-- `exact_set_match`
-- `score_mae`
+- `exact_match`
+- `normalized_match`
+- `total`
 
 ## 7. 常见问题
 

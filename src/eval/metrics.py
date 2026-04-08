@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 from typing import Dict, List
 
@@ -17,53 +18,49 @@ def _load_jsonl(path: Path) -> List[Dict]:
     return rows
 
 
-def _to_point_map(triggered_points: List[Dict]) -> Dict[str, bool]:
-    return {item["point_id"]: bool(item["triggered"]) for item in triggered_points}
+def _normalize_text(text: str) -> str:
+    text = text.strip()
+    text = re.sub(r"\s+", " ", text)
+    return text
+
+
+def _extract_pair(pred: Dict, ref: Dict) -> tuple[str, str]:
+    predicted = pred.get("predicted_answer")
+    if predicted is None:
+        predicted = pred.get("output")
+    if predicted is None:
+        predicted = ""
+
+    reference = ref.get("target")
+    if reference is None:
+        reference = ref.get("reference_answer")
+    if reference is None:
+        reference = ""
+
+    return str(predicted), str(reference)
 
 
 def compute_metrics(pred_rows: List[Dict], ref_rows: List[Dict]) -> Dict[str, float]:
     if len(pred_rows) != len(ref_rows):
         raise ValueError("Prediction and reference row counts must match")
 
-    tp = fp = fn = 0
     exact_match = 0
-    score_abs_sum = 0.0
+    normalized_match = 0
 
     for pred, ref in zip(pred_rows, ref_rows):
-        pred_out = pred.get("output", pred)
-        ref_out = ref.get("output", ref)
-
-        pred_map = _to_point_map(pred_out["triggered_points"])
-        ref_map = _to_point_map(ref_out["triggered_points"])
-
-        all_point_ids = set(pred_map) | set(ref_map)
-        for point_id in all_point_ids:
-            pred_triggered = pred_map.get(point_id, False)
-            ref_triggered = ref_map.get(point_id, False)
-            if pred_triggered and ref_triggered:
-                tp += 1
-            elif pred_triggered and not ref_triggered:
-                fp += 1
-            elif (not pred_triggered) and ref_triggered:
-                fn += 1
-
-        pred_set = {point_id for point_id, triggered in pred_map.items() if triggered}
-        ref_set = {point_id for point_id, triggered in ref_map.items() if triggered}
-        if pred_set == ref_set:
+        predicted, reference = _extract_pair(pred, ref)
+        if predicted == reference:
             exact_match += 1
 
-        score_abs_sum += abs(float(pred_out["final_score"]) - float(ref_out["final_score"]))
+        if _normalize_text(predicted) == _normalize_text(reference):
+            normalized_match += 1
 
-    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
-    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-    f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0.0
+    total = len(ref_rows)
 
     return {
-        "point_precision": precision,
-        "point_recall": recall,
-        "point_f1": f1,
-        "exact_set_match": exact_match / len(ref_rows) if ref_rows else 0.0,
-        "score_mae": score_abs_sum / len(ref_rows) if ref_rows else 0.0,
+        "exact_match": exact_match / total if total else 0.0,
+        "normalized_match": normalized_match / total if total else 0.0,
+        "total": total,
     }
 
 

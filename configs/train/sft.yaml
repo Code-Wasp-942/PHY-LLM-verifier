@@ -1,4 +1,4 @@
-model_name_or_path: Qwen/Qwen2.5-8B-Instruct
+model_name_or_path: ./models/Qwen2.5-8B-Instruct
 train_file: data/processed/train.jsonl
 val_file: data/processed/val.jsonl
 output_dir: checkpoints/sft_full
@@ -9,6 +9,7 @@ per_device_eval_batch_size: 2
 gradient_accumulation_steps: 16
 learning_rate: 1.5e-5
 num_train_epochs: 2
+max_steps: 1000
 warmup_ratio: 0.03
 weight_decay: 0.01
 lr_scheduler_type: cosine

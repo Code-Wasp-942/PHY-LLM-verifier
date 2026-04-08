@@ -1,6 +1,6 @@
 # LLM Physics Grader
 
-This repo contains a starter pipeline for fine-tuning a Qwen 8B model for physics rubric triggering.
+This repo contains a starter pipeline for fine-tuning a Qwen 8B model on VerifyBench-style QA data.
 
 ## Goal
 
@@ -8,21 +8,19 @@ Given:
 
 - question
 - reference answer
-- rubric points
-- student answer
 
 Predict:
 
-- which rubric points are triggered
-- final score
+- final answer text
 
 ## Project Layout
 
 - `configs/`: model and training configs
-- `src/schema.py`: strict input/output schema
-- `src/data/build_sft_dataset.py`: converts VerifyBench-like data into SFT JSONL
+- `src/schema.py`: VerifyBench schema definitions
+- `src/data/build_sft_dataset.py`: converts VerifyBench rows into SFT JSONL
 - `src/train/run_sft.py`: full-parameter SFT training entry
-- `src/eval/metrics.py`: point-level metrics
+- `src/eval/generate_predictions.py`: generation script for test set
+- `src/eval/metrics.py`: text exact-match metrics
 - `scripts/`: helper scripts for data prep, train, eval
 
 ## Quick Start
@@ -52,19 +50,11 @@ Processed `jsonl` rows look like:
 ```json
 {
   "question_id": "Q_001",
-  "input": {
-    "question": "...",
-    "reference_answer": "...",
-    "rubric": [
-      {"point_id": "P1", "desc": "...", "score": 2, "requires": []}
-    ],
-    "student_answer": "..."
-  },
-  "output": {
-    "triggered_points": [
-      {"point_id": "P1", "triggered": true, "evidence": "...", "confidence": 0.95}
-    ],
-    "final_score": 2
+  "prompt": "You are an accurate problem-solving assistant...",
+  "target": "reference answer text",
+  "metadata": {
+    "completion_id": "...",
+    "source": "..."
   }
 }
 ```

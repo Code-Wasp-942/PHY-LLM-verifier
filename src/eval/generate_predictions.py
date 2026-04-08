@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 from typing import Dict, List
 
@@ -20,16 +21,10 @@ def _load_jsonl(path: Path) -> List[Dict]:
     return rows
 
 
-def _safe_parse_json(text: str) -> Dict:
-    text = text.strip()
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        left = text.find("{")
-        right = text.rfind("}")
-        if left >= 0 and right > left:
-            return json.loads(text[left : right + 1])
-        raise
+def _normalize_generated_text(text: str) -> str:
+    cleaned = text.strip()
+    cleaned = re.sub(r"^\s*(final\s*answer\s*[:：])", "", cleaned, flags=re.IGNORECASE)
+    return cleaned.strip()
 
 
 def main() -> None:
@@ -80,11 +75,12 @@ def main() -> None:
 
             new_tokens = generated[0][model_inputs["input_ids"].shape[1] :]
             generated_text = tokenizer.decode(new_tokens, skip_special_tokens=True)
-            parsed = _safe_parse_json(generated_text)
+            predicted_answer = _normalize_generated_text(generated_text)
 
             out_row = {
                 "question_id": row.get("question_id"),
-                "output": parsed,
+                "predicted_answer": predicted_answer,
+                "reference_answer": row.get("target", ""),
             }
             file.write(json.dumps(out_row, ensure_ascii=False) + "\n")
 
