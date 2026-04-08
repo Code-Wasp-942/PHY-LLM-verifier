@@ -4,7 +4,7 @@ import argparse
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List
+from typing import Any, Dict, List
 
 import torch
 import yaml
@@ -42,15 +42,47 @@ class SFTConfig:
     report_to: str = "none"
     seed: int = 42
     trust_remote_code: bool = True
+    torch_dtype: str | None = None
+    optim: str = "adamw_torch"
+    max_grad_norm: float = 1.0
+    dataloader_num_workers: int = 2
+    save_safetensors: bool = True
 
 
-def _load_config(path: Path) -> SFTConfig:
+def _load_yaml(path: Path) -> Dict[str, Any]:
     with path.open("r", encoding="utf-8") as file:
         data = yaml.safe_load(file)
-    return SFTConfig(**data)
+    return data or {}
+
+
+def _load_config(train_config_path: Path, model_config_path: Path | None) -> SFTConfig:
+    train_data = _load_yaml(train_config_path)
+    model_data = _load_yaml(model_config_path) if model_config_path else {}
+    merged = {**model_data, **train_data}
+    return SFTConfig(**merged)
+
+
+def _resolve_torch_dtype(config: SFTConfig) -> torch.dtype:
+    if config.torch_dtype is None:
+        return torch.bfloat16 if config.bf16 else torch.float32
+
+    dtype_map = {
+        "float32": torch.float32,
+        "fp32": torch.float32,
+        "float16": torch.float16,
+        "fp16": torch.float16,
+        "bfloat16": torch.bfloat16,
+        "bf16": torch.bfloat16,
+    }
+    normalized = str(config.torch_dtype).strip().lower()
+    if normalized not in dtype_map:
+        raise ValueError(f"Unsupported torch_dtype: {config.torch_dtype}")
+    return dtype_map[normalized]
 
 
 def _load_jsonl(path: str) -> Dataset:
+    if not Path(path).exists():
+        raise FileNotFoundError(f"JSONL file not found: {path}")
     rows: List[Dict] = []
     with Path(path).open("r", encoding="utf-8") as file:
         for line in file:
@@ -92,7 +124,7 @@ def _build_tokenizer_and_model(config: SFTConfig):
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    dtype = torch.bfloat16 if config.bf16 else torch.float32
+    dtype = _resolve_torch_dtype(config)
     model = AutoModelForCausalLM.from_pretrained(
         config.model_name_or_path,
         trust_remote_code=config.trust_remote_code,
@@ -150,24 +182,30 @@ class DataCollatorForCausalLM:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run full-parameter SFT for Qwen 8B")
     parser.add_argument("--config", type=Path, default=Path("configs/train/sft.yaml"))
+    parser.add_argument(
+        "--model-config", type=Path, default=Path("configs/model/qwen2_5_8b_sft.yaml")
+    )
+    parser.add_argument("--resume-from-checkpoint", type=str, default=None)
     args = parser.parse_args()
 
-    config = _load_config(args.config)
+    model_config_path = args.model_config if args.model_config.exists() else None
+    config = _load_config(args.config, model_config_path)
     tokenizer, model = _build_tokenizer_and_model(config)
 
     train_dataset = _load_jsonl(config.train_file)
-    val_dataset = _load_jsonl(config.val_file)
+    val_dataset = _load_jsonl(config.val_file) if Path(config.val_file).exists() else None
 
     train_dataset = train_dataset.map(
         lambda row: _tokenize_sample(row, tokenizer, config.max_length),
         remove_columns=train_dataset.column_names,
         desc="Tokenizing train dataset",
     )
-    val_dataset = val_dataset.map(
-        lambda row: _tokenize_sample(row, tokenizer, config.max_length),
-        remove_columns=val_dataset.column_names,
-        desc="Tokenizing validation dataset",
-    )
+    if val_dataset is not None:
+        val_dataset = val_dataset.map(
+            lambda row: _tokenize_sample(row, tokenizer, config.max_length),
+            remove_columns=val_dataset.column_names,
+            desc="Tokenizing validation dataset",
+        )
 
     training_args = TrainingArguments(
         output_dir=config.output_dir,
@@ -179,18 +217,23 @@ def main() -> None:
         warmup_ratio=config.warmup_ratio,
         weight_decay=config.weight_decay,
         lr_scheduler_type=config.lr_scheduler_type,
+        optim=config.optim,
+        max_grad_norm=config.max_grad_norm,
+        dataloader_num_workers=config.dataloader_num_workers,
         logging_steps=config.logging_steps,
         save_steps=config.save_steps,
         eval_steps=config.eval_steps,
         save_total_limit=config.save_total_limit,
+        save_safetensors=config.save_safetensors,
         bf16=config.bf16,
         gradient_checkpointing=config.gradient_checkpointing,
         deepspeed=config.deepspeed,
         report_to=[] if config.report_to == "none" else [config.report_to],
         seed=config.seed,
-        eval_strategy="steps",
+        evaluation_strategy="steps" if val_dataset is not None else "no",
         save_strategy="steps",
         logging_strategy="steps",
+        remove_unused_columns=False,
         load_best_model_at_end=False,
         ddp_find_unused_parameters=False,
     )
@@ -204,7 +247,21 @@ def main() -> None:
         data_collator=collator,
     )
 
-    trainer.train()
+    print(
+        json.dumps(
+            {
+                "train_file": config.train_file,
+                "val_file": config.val_file,
+                "model_name_or_path": config.model_name_or_path,
+                "output_dir": config.output_dir,
+                "max_length": config.max_length,
+                "resume_from_checkpoint": args.resume_from_checkpoint,
+            },
+            ensure_ascii=False,
+        )
+    )
+
+    trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
     trainer.save_model(config.output_dir)
     tokenizer.save_pretrained(config.output_dir)
 
