@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import inspect
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -213,37 +214,47 @@ def main() -> None:
             desc="Tokenizing validation dataset",
         )
 
-    training_args = TrainingArguments(
-        output_dir=config.output_dir,
-        per_device_train_batch_size=config.per_device_train_batch_size,
-        per_device_eval_batch_size=config.per_device_eval_batch_size,
-        gradient_accumulation_steps=config.gradient_accumulation_steps,
-        learning_rate=config.learning_rate,
-        num_train_epochs=config.num_train_epochs,
-        max_steps=config.max_steps,
-        warmup_ratio=config.warmup_ratio,
-        weight_decay=config.weight_decay,
-        lr_scheduler_type=config.lr_scheduler_type,
-        optim=config.optim,
-        max_grad_norm=config.max_grad_norm,
-        dataloader_num_workers=config.dataloader_num_workers,
-        logging_steps=config.logging_steps,
-        save_steps=config.save_steps,
-        eval_steps=config.eval_steps,
-        save_total_limit=config.save_total_limit,
-        save_safetensors=config.save_safetensors,
-        bf16=config.bf16,
-        gradient_checkpointing=config.gradient_checkpointing,
-        deepspeed=config.deepspeed,
-        report_to=[] if config.report_to == "none" else [config.report_to],
-        seed=config.seed,
-        eval_strategy="steps" if val_dataset is not None else "no",
-        save_strategy="steps",
-        logging_strategy="steps",
-        remove_unused_columns=False,
-        load_best_model_at_end=False,
-        ddp_find_unused_parameters=False,
-    )
+    training_kwargs: Dict[str, Any] = {
+        "output_dir": config.output_dir,
+        "per_device_train_batch_size": config.per_device_train_batch_size,
+        "per_device_eval_batch_size": config.per_device_eval_batch_size,
+        "gradient_accumulation_steps": config.gradient_accumulation_steps,
+        "learning_rate": config.learning_rate,
+        "num_train_epochs": config.num_train_epochs,
+        "max_steps": config.max_steps,
+        "warmup_ratio": config.warmup_ratio,
+        "weight_decay": config.weight_decay,
+        "lr_scheduler_type": config.lr_scheduler_type,
+        "optim": config.optim,
+        "max_grad_norm": config.max_grad_norm,
+        "dataloader_num_workers": config.dataloader_num_workers,
+        "logging_steps": config.logging_steps,
+        "save_steps": config.save_steps,
+        "eval_steps": config.eval_steps,
+        "save_total_limit": config.save_total_limit,
+        "bf16": config.bf16,
+        "gradient_checkpointing": config.gradient_checkpointing,
+        "deepspeed": config.deepspeed,
+        "report_to": [] if config.report_to == "none" else [config.report_to],
+        "seed": config.seed,
+        "save_strategy": "steps",
+        "logging_strategy": "steps",
+        "remove_unused_columns": False,
+        "load_best_model_at_end": False,
+        "ddp_find_unused_parameters": False,
+    }
+
+    training_arg_fields = inspect.signature(TrainingArguments.__init__).parameters
+    eval_strategy_value = "steps" if val_dataset is not None else "no"
+    if "eval_strategy" in training_arg_fields:
+        training_kwargs["eval_strategy"] = eval_strategy_value
+    elif "evaluation_strategy" in training_arg_fields:
+        training_kwargs["evaluation_strategy"] = eval_strategy_value
+
+    if "save_safetensors" in training_arg_fields:
+        training_kwargs["save_safetensors"] = config.save_safetensors
+
+    training_args = TrainingArguments(**training_kwargs)
 
     collator = DataCollatorForCausalLM(pad_token_id=tokenizer.pad_token_id)
     trainer = Trainer(
