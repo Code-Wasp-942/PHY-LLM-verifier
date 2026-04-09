@@ -14,7 +14,7 @@ reports/*
 logs/*
 !logs/.gitkeep
 
-data/raw/*
+# data/raw/*
 !data/raw/.gitkeep
 
 data/processed/*
@@ -27,3 +27,4 @@ models/*
 
 .python-version
 *.log
+*.egg-info
