@@ -17,7 +17,7 @@ logs/*
 # data/raw/*
 !data/raw/.gitkeep
 
-data/processed/*
+# data/processed/*
 !data/processed/.gitkeep
 
 .tmp_opencode_pkg/
