@@ -1,0 +1,17 @@
+.git
+.gitignore
+.venv
+.vscode
+.ruff_cache
+__pycache__
+*.pyc
+
+models
+data
+checkpoints
+outputs
+logs
+reports
+
+error.log
+log.log
