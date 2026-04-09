@@ -25,4 +25,5 @@ opencode-ai-*.tgz
 
 models/*
 
+.python-version
 *.log
