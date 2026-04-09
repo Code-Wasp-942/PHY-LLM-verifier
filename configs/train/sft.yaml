@@ -1,4 +1,4 @@
-model_name_or_path: ./models/Qwen2.5-8B-Instruct
+model_config: ../model/qwen2_5_8b_sft.yaml
 train_file: data/processed/train.jsonl
 val_file: data/processed/val.jsonl
 output_dir: checkpoints/sft_full

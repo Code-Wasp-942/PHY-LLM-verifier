@@ -55,6 +55,14 @@ def _load_yaml(path: Path) -> Dict[str, Any]:
 
 def _load_config(train_config_path: Path, model_config_path: Path | None) -> SFTConfig:
     train_data = _load_yaml(train_config_path)
+    model_config_from_train = train_data.pop("model_config", None)
+
+    if model_config_path is None and model_config_from_train:
+        candidate = Path(model_config_from_train)
+        if not candidate.is_absolute():
+            candidate = (train_config_path.parent / candidate).resolve()
+        model_config_path = candidate
+
     model_data = _load_yaml(model_config_path) if model_config_path else {}
     merged = {**model_data, **train_data}
     return SFTConfig(**merged)
@@ -180,13 +188,13 @@ class DataCollatorForCausalLM:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run full-parameter SFT for Qwen 8B")
     parser.add_argument("--config", type=Path, default=Path("configs/train/sft.yaml"))
-    parser.add_argument(
-        "--model-config", type=Path, default=Path("configs/model/qwen2_5_8b_sft.yaml")
-    )
+    parser.add_argument("--model-config", type=Path, default=None)
     parser.add_argument("--resume-from-checkpoint", type=str, default=None)
     args = parser.parse_args()
 
-    model_config_path = args.model_config if args.model_config.exists() else None
+    model_config_path = (
+        args.model_config if args.model_config and args.model_config.exists() else None
+    )
     config = _load_config(args.config, model_config_path)
     tokenizer, model = _build_tokenizer_and_model(config)
 

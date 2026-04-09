@@ -24,3 +24,5 @@ data/processed/*
 opencode-ai-*.tgz
 
 models/*
+
+*.log
